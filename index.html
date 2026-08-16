@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>献立・外食スケジューラー</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- html2canvas for image export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Noto Sans JP"', 'Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        cooking: { bg: '#e6f4ea', border: '#34a853', text: '#137333' },
+                        eatingout: { bg: '#feefe3', border: '#fa7b17', text: '#b06000' },
+                        takeout: { bg: '#feefc3', border: '#f9ab00', text: '#b06000' },
+                        premade: { bg: '#e8f0fe', border: '#1a73e8', text: '#174ea6' },
+                        lightmeal: { bg: '#fce8e6', border: '#ea4335', text: '#c5221f' },
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* カスタムスクロールバーとアニメーション */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .drag-over {
+            border-color: #3b82f6 !important;
+            background-color: #eff6ff !important;
+            transform: scale(1.02);
+        }
+        
+        .selected-tap-item {
+            ring: 3px;
+            ring-color: #3b82f6;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.85; transform: scale(1.03); }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col">
+
+    <!-- アプリヘッダー -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 py-3 sm:px-6 flex flex-wrap justify-between items-center gap-3">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-bold text-xl shadow-md">
+                    <i class="fa-solid font-utensils"></i>🍳
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold text-slate-800 leading-tight">献立＆外食スケジューラー</h1>
+                    <p class="text-xs text-slate-500">ドラッグ＆ドロップでらくらく1週間・期間の献立計画</p>
+                </div>
+            </div>
+
+            <!-- アクションボタン群 -->
+            <div class="flex items-center space-x-2 flex-wrap">
+                <button id="btn-export-text" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition flex items-center gap-1.5 shadow-sm">
+                    <i class="fa-solid fa-file-lines text-slate-500"></i>
+                    <span>テキスト出力</span>
+                </button>
+                <button id="btn-export-image" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition flex items-center gap-1.5 shadow-md">
+                    <i class="fa-solid fa-image"></i>
+                    <span>画像保存</span>
+                </button>
+                <button id="btn-auto-fill" class="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium transition flex items-center gap-1.5 shadow-sm" title="空き枠をランダムに献立候補で埋めます">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    <span class="hidden sm:inline">おまかせ埋め</span>
+                </button>
+                <button id="btn-clear-schedule" class="p-2 text-slate-400 hover:text-red-500 rounded-lg transition" title="スケジュールをクリア">
+                    <i class="fa-solid fa-trash-can"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-6 sm:px-6 flex-1 w-full grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <!-- 左側コントロール＆メニュープール（幅: lgで4/12） -->
+        <section class="lg:col-span-4 flex flex-col gap-5">
+            
+            <!-- 1. 期間設定パネル -->
+            <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200">
+                <h2 class="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
+                    <i class="fa-regular fa-calendar-days text-emerald-500"></i>
+                    <span>1. 期間を設定する</span>
+                </h2>
+                
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">開始日</label>
+                        <input type="date" id="input-start-date" class="w-full text-sm p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">終了日</label>
+                        <input type="date" id="input-end-date" class="w-full text-sm p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                    </div>
+                </div>
+
+                <div class="flex gap-2">
+                    <button id="btn-quick-this-week" class="flex-1 py-1.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-md text-xs font-medium transition">
+                        今日から7日間
+                    </button>
+                    <button id="btn-quick-next-week" class="flex-1 py-1.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-md text-xs font-medium transition">
+                        来週月〜日
+                    </button>
+                </div>
+            </div>
+
+            <!-- 2. メニュー候補ライブラリ -->
+            <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 flex-1 flex flex-col">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                        <i class="fa-solid fa-list-check text-emerald-500"></i>
+                        <span>2. メニュー候補</span>
+                    </h2>
+                    <span id="tap-mode-badge" class="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-medium hidden">
+                        タップ選択中
+                    </span>
+                </div>
+
+                <!-- メニュー追加フォーム -->
+                <form id="form-add-menu" class="mb-4">
+                    <div class="flex flex-col gap-2">
+                        <input type="text" id="input-menu-name" placeholder="例: ハンバーグ, ラーメン外食..." required
+                            class="w-full text-sm p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                        
+                        <div class="flex gap-2">
+                            <select id="select-menu-category" class="text-xs p-2 border border-slate-300 rounded-lg bg-white focus:outline-none text-slate-700 font-medium">
+                                <option value="cooking">🍳 自炊</option>
+                                <option value="eatingout">🍽️ 外食</option>
+                                <option value="takeout">🍱 テイクアウト</option>
+                                <option value="premade">📦 作り置き/惣菜</option>
+                                <option value="lightmeal">☕ 軽食/朝食</option>
+                            </select>
+                            <button type="submit" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm py-2 px-3 rounded-lg transition shadow-sm flex items-center justify-center gap-1">
+                                <i class="fa-solid fa-plus"></i> 追加
+                            </button>
+                        </div>
+                    </div>
+                </form>
+
+                <!-- タップ指示ガイド -->
+                <p class="text-xs text-slate-400 mb-2">
+                    <i class="fa-solid fa-circle-info mr-1"></i>ドラッグするか、タップで選択してからカレンダーの枠をタップして配置します。
+                </p>
+
+                <!-- ブロック一覧（スクロール可能） -->
+                <div id="menu-pool" class="flex-1 min-h-[220px] max-h-[420px] overflow-y-auto p-2 bg-slate-50 border border-slate-200 rounded-xl flex flex-wrap content-start gap-2">
+                    <!-- JSで動的にメニューブロックを生成 -->
+                </div>
+
+                <!-- プリセット投入ボタン -->
+                <div class="mt-3 pt-3 border-t border-slate-100 flex justify-between items-center">
+                    <span class="text-xs text-slate-400">定番メニューを追加:</span>
+                    <button id="btn-add-presets" class="text-xs text-emerald-600 hover:text-emerald-700 font-semibold transition">
+                        + サンプルを一括追加
+                    </button>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- 右側：スケジュール表示エリア（幅: lgで8/12） -->
+        <section class="lg:col-span-8 flex flex-col">
+            <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 flex-1 flex flex-col">
+                <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fa-solid fa-utensils text-emerald-500"></i>
+                            <span>献立スケジュール</span>
+                        </h2>
+                        <p id="schedule-range-display" class="text-xs text-slate-500 font-medium mt-0.5">
+                            期間を設定してください
+                        </p>
+                    </div>
+
+                    <!-- 凡例 (Legend) -->
+                    <div class="flex items-center gap-2 text-[11px] text-slate-600 flex-wrap">
+                        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>自炊</span>
+                        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-orange-500"></span>外食</span>
+                        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>テイクアウト</span>
+                        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>作り置き</span>
+                    </div>
+                </div>
+
+                <!-- カレンダー（スケジュール出力領域含む） -->
+                <div id="capture-area" class="bg-white rounded-xl p-1">
+                    <!-- キャプチャ時の見出し（通常隠し） -->
+                    <div id="export-header" class="hidden pb-4 mb-4 border-b border-slate-200">
+                        <h2 class="text-xl font-bold text-slate-800">献立＆外食スケジュール</h2>
+                        <p id="export-range-text" class="text-sm text-slate-500"></p>
+                    </div>
+
+                    <!-- カレンダーリスト本体 -->
+                    <div id="schedule-grid" class="space-y-3">
+                        <!-- JSで日付ごとの朝昼晩枠を生成 -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- モーダル: テキスト出力 -->
+    <div id="modal-text-export" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl flex flex-col max-h-[85vh]">
+            <div class="flex justify-between items-center mb-3">
+                <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-copy text-emerald-500"></i>
+                    <span>テキスト一覧</span>
+                </h3>
+                <button id="btn-close-text-modal" class="text-slate-400 hover:text-slate-600 p-1">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <p class="text-xs text-slate-500 mb-2">LINEやメモ帳に貼り付けて使用できます。</p>
+            <textarea id="textarea-export" readonly class="w-full flex-1 min-h-[250px] p-3 text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl focus:outline-none resize-none"></textarea>
+            <div class="mt-4 flex justify-end gap-2">
+                <button id="btn-copy-text" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm rounded-lg transition flex items-center gap-1.5 shadow-md">
+                    <i class="fa-regular fa-copy"></i> クリップボードにコピー
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- カスタム通知トースト -->
+    <div id="toast" class="fixed bottom-5 right-5 bg-slate-800 text-white px-4 py-2.5 rounded-xl shadow-lg text-sm font-medium transform translate-y-20 opacity-0 transition-all duration-300 z-50 flex items-center gap-2 pointer-events-none">
+        <i id="toast-icon" class="fa-solid fa-circle-check text-emerald-400"></i>
+        <span id="toast-message">メッセージ</span>
+    </div>
+
+    <script>
+        // 定数・カテゴリ設定
+        const CATEGORIES = {
+            cooking: { label: '自炊', bg: 'bg-emerald-50', border: 'border-emerald-300', text: 'text-emerald-800', badge: 'bg-emerald-100 text-emerald-700' },
+            eatingout: { label: '外食', bg: 'bg-orange-50', border: 'border-orange-300', text: 'text-orange-800', badge: 'bg-orange-100 text-orange-700' },
+            takeout: { label: 'テイクアウト', bg: 'bg-amber-50', border: 'border-amber-300', text: 'text-amber-800', badge: 'bg-amber-100 text-amber-700' },
+            premade: { label: '作り置き', bg: 'bg-blue-50', border: 'border-blue-300', text: 'text-blue-800', badge: 'bg-blue-100 text-blue-700' },
+            lightmeal: { label: '軽食/パン', bg: 'bg-rose-50', border: 'border-rose-300', text: 'text-rose-800', badge: 'bg-rose-100 text-rose-700' }
+        };
+
+        const MEALS = [
+            { id: 'morning', label: '朝', icon: 'fa-sun text-amber-500' },
+            { id: 'lunch', label: '昼', icon: 'fa-cloud-sun text-sky-500' },
+            { id: 'dinner', label: '夜', icon: 'fa-moon text-indigo-500' }
+        ];
+
+        const SAMPLE_PRESETS = [
+            { name: 'カレーライス', category: 'cooking' },
+            { name: 'ハンバーグ', category: 'cooking' },
+            { name: 'パスタ', category: 'cooking' },
+            { name: 'ラーメン外食', category: 'eatingout' },
+            { name: 'カフェランチ', category: 'eatingout' },
+            { name: '焼肉外食', category: 'eatingout' },
+            { name: '寿司テイクアウト', category: 'takeout' },
+            { name: 'スーパーの惣菜', category: 'premade' },
+            { name: '食パン・ヨーグルト', category: 'lightmeal' },
+            { name: '残りもの処分', category: 'premade' },
+        ];
+
+        // アプリケーション状態
+        let state = {
+            startDate: '',
+            endDate: '',
+            menuPool: [],
+            schedule: {}, // 構造: { "2026-08-17_morning": { id, name, category }, ... }
+            selectedMenuForTap: null // タップ選択モード用
+        };
+
+        window.addEventListener('DOMContentLoaded', () => {
+            initDates();
+            loadState();
+            renderMenuPool();
+            renderScheduleGrid();
+            setupEventListeners();
+        });
+
+        // 日付の初期化 (デフォルト: 今日から7日間)
+        function initDates() {
+            const today = new Date();
+            const nextWeek = new Date();
+            nextWeek.setDate(today.getDate() + 6);
+
+            state.startDate = formatDateString(today);
+            state.endDate = formatDateString(nextWeek);
+
+            document.getElementById('input-start-date').value = state.startDate;
+            document.getElementById('input-end-date').value = state.endDate;
+        }
+
+        function formatDateString(date) {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+
+        // ストレージ保存と復元
+        function saveState() {
+            localStorage.setItem('menu_scheduler_state', JSON.stringify({
+                menuPool: state.menuPool,
+                schedule: state.schedule,
+                startDate: state.startDate,
+                endDate: state.endDate
+            }));
+        }
+
+        function loadState() {
+            const saved = localStorage.getItem('menu_scheduler_state');
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    state.menuPool = parsed.menuPool || [];
+                    state.schedule = parsed.schedule || {};
+                    if (parsed.startDate) state.startDate = parsed.startDate;
+                    if (parsed.endDate) state.endDate = parsed.endDate;
+
+                    document.getElementById('input-start-date').value = state.startDate;
+                    document.getElementById('input-end-date').value = state.endDate;
+                } catch (e) {
+                    console.error('Failed to parse saved state', e);
+                }
+            }
+
+            // 初期状態でプールが空ならサンプルを追加
+            if (state.menuPool.length === 0) {
+                addSamplePresets();
+            }
+        }
+
+        function renderMenuPool() {
+            const poolEl = document.getElementById('menu-pool');
+            poolEl.innerHTML = '';
+
+            if (state.menuPool.length === 0) {
+                poolEl.innerHTML = `
+                    <div class="w-full h-32 flex flex-col items-center justify-center text-slate-400 text-xs text-center p-4">
+                        <i class="fa-solid fa-utensils text-2xl mb-2 text-slate-300"></i>
+                        <span>メニュー候補がありません。<br>上のフォームから追加してください。</span>
+                    </div>
+                `;
+                return;
+            }
+
+            state.menuPool.forEach(menu => {
+                const catInfo = CATEGORIES[menu.category] || CATEGORIES.cooking;
+                const isSelected = state.selectedMenuForTap && state.selectedMenuForTap.id === menu.id;
+
+                const item = document.createElement('div');
+                item.className = `group flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-grab active:cursor-grabbing border shadow-sm transition-all select-none ${catInfo.bg} ${catInfo.border} ${catInfo.text} ${isSelected ? 'ring-2 ring-blue-500 scale-105' : 'hover:shadow'}`;
+                item.draggable = true;
+
+                item.innerHTML = `
+                    <span>${menu.name}</span>
+                    <button class="btn-delete-pool-item opacity-0 group-hover:opacity-100 hover:text-red-600 transition ml-1 p-0.5" data-id="${menu.id}" title="候補から削除">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                `;
+
+                // ドラッグ開始
+                item.addEventListener('dragstart', (e) => {
+                    e.dataTransfer.setData('text/plain', JSON.stringify(menu));
+                    e.dataTransfer.effectAllowed = 'copy';
+                });
+
+                // タップ/クリック選択（スマホ対応）
+                item.addEventListener('click', (e) => {
+                    if (e.target.closest('.btn-delete-pool-item')) return;
+                    
+                    if (state.selectedMenuForTap && state.selectedMenuForTap.id === menu.id) {
+                        state.selectedMenuForTap = null; // 解除
+                    } else {
+                        state.selectedMenuForTap = menu;
+                        showToast(`「${menu.name}」を選択中。入れたい枠をタップしてください`, 'info');
+                    }
+                    updateTapModeUI();
+                    renderMenuPool();
+                });
+
+                poolEl.appendChild(item);
+            });
+
+            // 削除ボタンイベント
+            poolEl.querySelectorAll('.btn-delete-pool-item').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const id = btn.getAttribute('data-id');
+                    state.menuPool = state.menuPool.filter(m => m.id !== id);
+                    saveState();
+                    renderMenuPool();
+                });
+            });
+        }
+
+        function updateTapModeUI() {
+            const badge = document.getElementById('tap-mode-badge');
+            if (state.selectedMenuForTap) {
+                badge.classList.remove('hidden');
+                badge.textContent = `選択中: ${state.selectedMenuForTap.name}`;
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+
+        function renderScheduleGrid() {
+            const gridEl = document.getElementById('schedule-grid');
+            const rangeDisplay = document.getElementById('schedule-range-display');
+            gridEl.innerHTML = '';
+
+            const start = new Date(state.startDate);
+            const end = new Date(state.endDate);
+
+            if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
+                gridEl.innerHTML = `<div class="p-8 text-center text-slate-400 text-sm">正しい日付期間を選択してください。</div>`;
+                rangeDisplay.textContent = '日付指定エラー';
+                return;
+            }
+
+            // 日付差分の計算
+            const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+            if (diffDays > 31) {
+                gridEl.innerHTML = `<div class="p-8 text-center text-amber-600 text-sm">※一度に表示できる最大期間は31日間です。期間を短く設定してください。</div>`;
+                return;
+            }
+
+            rangeDisplay.textContent = `${formatJapaneseDate(start)} 〜 ${formatJapaneseDate(end)} (${diffDays}日間)`;
+            document.getElementById('export-range-text').textContent = rangeDisplay.textContent;
+
+            // 日付リストを巡回して生成
+            let curr = new Date(start);
+            const dayOfWeekJa = ['日', '月', '火', '水', '木', '金', '土'];
+
+            while (curr <= end) {
+                const dateStr = formatDateString(curr);
+                const dayNum = curr.getDay();
+                const dayLabel = dayOfWeekJa[dayNum];
+                
+                // 曜日の色
+                let dayColorClass = 'text-slate-700 bg-slate-100';
+                if (dayNum === 0) dayColorClass = 'text-red-600 bg-red-50'; // 日曜
+                if (dayNum === 6) dayColorClass = 'text-blue-600 bg-blue-50'; // 土曜
+
+                const dayCard = document.createElement('div');
+                dayCard.className = 'border border-slate-200 rounded-xl p-3 bg-white shadow-sm flex flex-col md:flex-row md:items-center gap-3 transition-all hover:border-slate-300';
+
+                // 日付見出し
+                const dateHeader = `
+                    <div class="flex md:flex-col items-center justify-between md:justify-center md:w-28 shrink-0 pb-2 md:pb-0 border-b md:border-b-0 md:border-r border-slate-100 pr-0 md:pr-3">
+                        <span class="text-xs text-slate-400 font-medium">${curr.getFullYear()}</span>
+                        <div class="flex items-center gap-1.5">
+                            <span class="text-base font-bold text-slate-800">${curr.getMonth() + 1}/${curr.getDate()}</span>
+                            <span class="text-xs px-2 py-0.5 rounded-md font-bold ${dayColorClass}">(${dayLabel})</span>
+                        </div>
+                    </div>
+                `;
+
+                // 朝・昼・夜のスロット
+                let slotsHTML = `<div class="grid grid-cols-1 sm:grid-cols-3 gap-2 flex-1">`;
+
+                MEALS.forEach(meal => {
+                    const slotKey = `${dateStr}_${meal.id}`;
+                    const assignedMenu = state.schedule[slotKey];
+                    
+                    let slotInner = '';
+                    if (assignedMenu) {
+                        const cat = CATEGORIES[assignedMenu.category] || CATEGORIES.cooking;
+                        slotInner = `
+                            <div class="flex items-center justify-between w-full h-full px-2.5 py-1.5 rounded-lg ${cat.bg} ${cat.border} border ${cat.text} text-xs font-semibold shadow-xs">
+                                <span class="truncate">${assignedMenu.name}</span>
+                                <button class="btn-remove-slot opacity-60 hover:opacity-100 hover:text-red-600 transition ml-1 p-0.5" data-slot="${slotKey}" title="枠から外す">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+                        `;
+                    } else {
+                        slotInner = `
+                            <div class="text-slate-300 text-xs flex items-center justify-center gap-1 pointer-events-none">
+                                <i class="fa-solid fa-plus text-[10px]"></i>
+                                <span>ドロップ</span>
+                            </div>
+                        `;
+                    }
+
+                    slotsHTML += `
+                        <div class="slot-container relative border-2 border-dashed border-slate-200 rounded-xl p-1.5 min-h-[46px] flex items-center transition-all bg-slate-50/50 hover:bg-slate-50"
+                             data-slot-key="${slotKey}">
+                            <span class="absolute top-1 left-2 text-[10px] font-bold text-slate-300 pointer-events-none flex items-center gap-1">
+                                <i class="fa-solid ${meal.icon}"></i> ${meal.label}
+                            </span>
+                            <div class="w-full pt-3">
+                                ${slotInner}
+                            </div>
+                        </div>
+                    `;
+                });
+
+                slotsHTML += `</div>`;
+
+                dayCard.innerHTML = dateHeader + slotsHTML;
+                gridEl.appendChild(dayCard);
+
+                // 翌日へ
+                curr.setDate(curr.getDate() + 1);
+            }
+
+            setupSlotEvents();
+        }
+
+        function formatJapaneseDate(d) {
+            return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+        }
+
+        function setupSlotEvents() {
+            const slots = document.querySelectorAll('.slot-container');
+
+            slots.forEach(slot => {
+                const slotKey = slot.getAttribute('data-slot-key');
+
+                // ドラッグオーバー
+                slot.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'copy';
+                    slot.classList.add('drag-over');
+                });
+
+                slot.addEventListener('dragleave', () => {
+                    slot.classList.remove('drag-over');
+                });
+
+                // ドロップ処理
+                slot.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    slot.classList.remove('drag-over');
+
+                    const rawData = e.dataTransfer.getData('text/plain');
+                    if (rawData) {
+                        try {
+                            const menu = JSON.parse(rawData);
+                            assignMenuToSlot(slotKey, menu);
+                        } catch (err) {
+                            console.error('Drop error', err);
+                        }
+                    }
+                });
+
+                // タップ配置処理
+                slot.addEventListener('click', (e) => {
+                    if (e.target.closest('.btn-remove-slot')) return;
+
+                    if (state.selectedMenuForTap) {
+                        assignMenuToSlot(slotKey, state.selectedMenuForTap);
+                        state.selectedMenuForTap = null;
+                        updateTapModeUI();
+                        renderMenuPool();
+                    }
+                });
+            });
+
+            // 削除ボタンのイベントリスナー
+            document.querySelectorAll('.btn-remove-slot').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const slotKey = btn.getAttribute('data-slot');
+                    delete state.schedule[slotKey];
+                    saveState();
+                    renderScheduleGrid();
+                });
+            });
+        }
+
+        function assignMenuToSlot(slotKey, menu) {
+            state.schedule[slotKey] = {
+                id: menu.id,
+                name: menu.name,
+                category: menu.category
+            };
+            saveState();
+            renderScheduleGrid();
+        }
+
+        // テキスト書き出し処理
+        function generateExportText() {
+            const start = new Date(state.startDate);
+            const end = new Date(state.endDate);
+            const dayOfWeekJa = ['日', '月', '火', '水', '木', '金', '土'];
+
+            if (isNaN(start.getTime()) || isNaN(end.getTime())) return '';
+
+            let text = `【献立＆外食スケジュール】\n`;
+            text += `期間: ${formatJapaneseDate(start)} 〜 ${formatJapaneseDate(end)}\n`;
+            text += `------------------------------------\n\n`;
+
+            let curr = new Date(start);
+            while (curr <= end) {
+                const dateStr = formatDateString(curr);
+                const dayLabel = dayOfWeekJa[curr.getDay()];
+                
+                const m = state.schedule[`${dateStr}_morning`]?.name || 'ー';
+                const l = state.schedule[`${dateStr}_lunch`]?.name || 'ー';
+                const d = state.schedule[`${dateStr}_dinner`]?.name || 'ー';
+
+                text += `■ ${curr.getMonth() + 1}/${curr.getDate()} (${dayLabel})\n`;
+                text += `  朝: ${m}\n  昼: ${l}\n  夜: ${d}\n\n`;
+
+                curr.setDate(curr.getDate() + 1);
+            }
+
+            return text;
+        }
+
+        // 画像としてダウンロード保存
+        async function exportAsImage() {
+            showToast('画像を生成中...', 'info');
+            
+            const captureArea = document.getElementById('capture-area');
+            const exportHeader = document.getElementById('export-header');
+
+            // キャプチャ用ヘッダーを一時的に表示
+            exportHeader.classList.remove('hidden');
+
+            try {
+                const canvas = await html2canvas(captureArea, {
+                    scale: 2, // 高解像度
+                    backgroundColor: '#ffffff',
+                    useCORS: true,
+                    logging: false
+                });
+
+                // 画像ダウンロード処理
+                const image = canvas.toDataURL('image/png');
+                const link = document.createElement('a');
+                link.href = image;
+                link.download = `献立スケジュール_${state.startDate}_${state.endDate}.png`;
+                link.click();
+
+                showToast('画像を保存しました！', 'success');
+            } catch (err) {
+                console.error(err);
+                showToast('画像の生成に失敗しました', 'error');
+            } finally {
+                // ヘッダーを再び非表示に
+                exportHeader.classList.add('hidden');
+            }
+        }
+
+        function autoFillSchedule() {
+            if (state.menuPool.length === 0) {
+                showToast('メニュー候補を先に追加してください', 'error');
+                return;
+            }
+
+            const start = new Date(state.startDate);
+            const end = new Date(state.endDate);
+            let curr = new Date(start);
+
+            let filledCount = 0;
+
+            while (curr <= end) {
+                const dateStr = formatDateString(curr);
+                MEALS.forEach(meal => {
+                    const slotKey = `${dateStr}_${meal.id}`;
+                    // 空枠のみランダム埋め
+                    if (!state.schedule[slotKey]) {
+                        const randomMenu = state.menuPool[Math.floor(Math.random() * state.menuPool.length)];
+                        state.schedule[slotKey] = {
+                            id: randomMenu.id,
+                            name: randomMenu.name,
+                            category: randomMenu.category
+                        };
+                        filledCount++;
+                    }
+                });
+                curr.setDate(curr.getDate() + 1);
+            }
+
+            if (filledCount > 0) {
+                saveState();
+                renderScheduleGrid();
+                showToast(`${filledCount}件の枠をランダムに埋めました！`, 'success');
+            } else {
+                showToast('すべての枠がすでに埋まっています', 'info');
+            }
+        }
+
+        function addSamplePresets() {
+            SAMPLE_PRESETS.forEach(p => {
+                state.menuPool.push({
+                    id: 'preset_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+                    name: p.name,
+                    category: p.category
+                });
+            });
+            saveState();
+            renderMenuPool();
+        }
+
+        function setupEventListeners() {
+            // メニュー追加フォーム
+            document.getElementById('form-add-menu').addEventListener('submit', (e) => {
+                e.preventDefault();
+                const nameInput = document.getElementById('input-menu-name');
+                const catSelect = document.getElementById('select-menu-category');
+
+                const name = nameInput.value.trim();
+                if (!name) return;
+
+                state.menuPool.push({
+                    id: 'menu_' + Date.now(),
+                    name: name,
+                    category: catSelect.value
+                });
+
+                nameInput.value = '';
+                saveState();
+                renderMenuPool();
+                showToast(`「${name}」を候補に追加しました`);
+            });
+
+            // 期間入力の変更
+            document.getElementById('input-start-date').addEventListener('change', (e) => {
+                state.startDate = e.target.value;
+                saveState();
+                renderScheduleGrid();
+            });
+
+            document.getElementById('input-end-date').addEventListener('change', (e) => {
+                state.endDate = e.target.value;
+                saveState();
+                renderScheduleGrid();
+            });
+
+            // クイック期間ボタン
+            document.getElementById('btn-quick-this-week').addEventListener('click', () => {
+                const today = new Date();
+                const end = new Date();
+                end.setDate(today.getDate() + 6);
+                state.startDate = formatDateString(today);
+                state.endDate = formatDateString(end);
+                
+                document.getElementById('input-start-date').value = state.startDate;
+                document.getElementById('input-end-date').value = state.endDate;
+                saveState();
+                renderScheduleGrid();
+            });
+
+            document.getElementById('btn-quick-next-week').addEventListener('click', () => {
+                const today = new Date();
+                const day = today.getDay();
+                // 次の月曜日を計算
+                const diffToNextMon = (day === 0 ? 1 : 8 - day);
+                const nextMon = new Date();
+                nextMon.setDate(today.getDate() + diffToNextMon);
+
+                const nextSun = new Date(nextMon);
+                nextSun.setDate(nextMon.getDate() + 6);
+
+                state.startDate = formatDateString(nextMon);
+                state.endDate = formatDateString(nextSun);
+
+                document.getElementById('input-start-date').value = state.startDate;
+                document.getElementById('input-end-date').value = state.endDate;
+                saveState();
+                renderScheduleGrid();
+            });
+
+            // 定番一括追加
+            document.getElementById('btn-add-presets').addEventListener('click', () => {
+                addSamplePresets();
+                showToast('定番サンプルを追加しました');
+            });
+
+            // テキスト出力モーダル
+            const textModal = document.getElementById('modal-text-export');
+            document.getElementById('btn-export-text').addEventListener('click', () => {
+                const txt = generateExportText();
+                document.getElementById('textarea-export').value = txt;
+                textModal.classList.remove('hidden');
+            });
+
+            document.getElementById('btn-close-text-modal').addEventListener('click', () => {
+                textModal.classList.add('hidden');
+            });
+
+            // テキストコピー
+            document.getElementById('btn-copy-text').addEventListener('click', () => {
+                const textarea = document.getElementById('textarea-export');
+                textarea.select();
+                document.execCommand('copy');
+                showToast('クリップボードにコピーしました！', 'success');
+                textModal.classList.add('hidden');
+            });
+
+            // 画像保存ボタン
+            document.getElementById('btn-export-image').addEventListener('click', exportAsImage);
+
+            // おまかせ埋め
+            document.getElementById('btn-auto-fill').addEventListener('click', autoFillSchedule);
+
+            // クリアボタン
+            document.getElementById('btn-clear-schedule').addEventListener('click', () => {
+                if (Object.keys(state.schedule).length === 0) return;
+                state.schedule = {};
+                saveState();
+                renderScheduleGrid();
+                showToast('スケジュールをクリアしました');
+            });
+        }
+
+        // トースト通知関数
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toast-message');
+            const toastIcon = document.getElementById('toast-icon');
+
+            toastMsg.textContent = message;
+
+            if (type === 'error') {
+                toastIcon.className = 'fa-solid fa-triangle-exclamation text-red-400';
+            } else if (type === 'info') {
+                toastIcon.className = 'fa-solid fa-circle-info text-sky-400';
+            } else {
+                toastIcon.className = 'fa-solid fa-circle-check text-emerald-400';
+            }
+
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
